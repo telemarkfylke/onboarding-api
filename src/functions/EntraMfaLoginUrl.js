@@ -35,7 +35,7 @@ app.http('EntraMfaLoginUrl', {
           codeChallengeMethod: 'S256'
         })
 
-        stateCache.set(state, { verifier }, 600)
+        stateCache.set(state, { verifier }, 1200)
 
         logger('info', [logPrefix, 'Successfully got entra auth stats url, responding to user'], context)
         return { status: 200, jsonBody: { loginUrl: authUrl } }
@@ -55,7 +55,7 @@ app.http('EntraMfaLoginUrl', {
     try {
       const entraClient = getEntraMfaClient()
 
-      const state = logEntryId
+      const state = `mfa${logEntryId}`
 
       const { verifier, challenge } = await cryptoProvider.generatePkceCodes()
 
@@ -69,7 +69,7 @@ app.http('EntraMfaLoginUrl', {
         loginHint: queryLoginHint || undefined
       })
 
-      stateCache.set(state, { verifier }, 600)
+      stateCache.set(state, { verifier }, 1200)
 
       logger('info', [logPrefix, 'Successfully got entra auth url, responding to user'], context)
       return { status: 200, jsonBody: { loginUrl: authUrl } }

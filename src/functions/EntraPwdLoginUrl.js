@@ -24,7 +24,7 @@ app.http('EntraPwdLoginUrl', {
     try {
       const entraClient = getEntraPwdClient()
 
-      const state = logEntryId
+      const state = `pwd${logEntryId}`
 
       const { verifier, challenge } = await cryptoProvider.generatePkceCodes()
 
@@ -38,7 +38,7 @@ app.http('EntraPwdLoginUrl', {
         loginHint: queryLoginHint || undefined
       })
 
-      stateCache.set(state, { verifier }, 600)
+      stateCache.set(state, { verifier }, 1200)
 
       logger('info', [logPrefix, 'Successfully got entra auth url, responding to user'], context)
       return { status: 200, jsonBody: { loginUrl: authUrl } }

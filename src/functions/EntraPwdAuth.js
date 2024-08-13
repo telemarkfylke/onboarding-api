@@ -2,7 +2,7 @@ const { app } = require('@azure/functions')
 const { getStateCache } = require('../state-cache')
 const { logger } = require('@vtfk/logger')
 const { getEntraPwdClient } = require('../entra-client')
-const { MONGODB, ENTRA_PWD } = require('../../config')
+const { MONGODB, ENTRA_PWD, LOG_IP_AND_USER_AGENT } = require('../../config')
 const { getMongoClient } = require('../mongo-client')
 const { ObjectId } = require('mongodb')
 
@@ -12,7 +12,7 @@ app.http('EntraPwdAuth', {
   methods: ['POST'],
   authLevel: 'function',
   handler: async (request, context) => {
-    const logPrefix = 'EntraPwdAuth'
+    let logPrefix = 'EntraPwdAuth'
     logger('info', [logPrefix, 'New request'], context)
     // Validate request body
     const { code, state } = await request.json()
@@ -22,17 +22,25 @@ app.http('EntraPwdAuth', {
     }
 
     // Verify type as well, just for extra credits
-    if ([code, state].some(param => typeof param !== 'string')) {
-      logger('warn', [logPrefix, 'Someone called EntraPwdAuth without code, and state as strings - is someone trying to hack us?'], context)
+    if ([code, state].some(param => typeof param !== 'string') || !state.startsWith('pwd')) {
+      logger('warn', [logPrefix, 'Someone called EntraPwdAuth without code, and state as strings, or state is not correct - is someone trying to hack us?'], context)
       return { status: 400, jsonBody: { message: 'Du har glemt at state, og code skal være string...' } }
     }
+
+    const logEntryId = state.substring(3)
+    logPrefix += ` - logEntryId: ${logEntryId}`
 
     // Check that state exist in cache (originates from authorization)
     const checks = stateCache.get(state)
     if (!checks) {
-      logger('warn', [logPrefix, 'The state sent by user does not match any state in state cache - is someone trying to be smart?'], context)
+      if (LOG_IP_AND_USER_AGENT) {
+        logger('warn', [logPrefix, `The state "${state}" (logEntryId) sent by user does not match any state in state cache - user was probs not fast enough?`, `ip: ${request.headers.get('X-Forwarded-For') || 'ukjent'}`, `user-agent: ${request.headers.get('user-agent') || 'ukjent'}`], context)
+      } else {
+        logger('warn', [logPrefix, `The state "${state}" (logEntryId) sent by user does not match any state in state cache - user was probs not fast enough. CHOO CHOOO!`], context)
+      }
       return { status: 500, jsonBody: { message: 'Du har brukt for lang tid, rykk tilbake til start' } }
     }
+
     try {
       const entraClient = getEntraPwdClient()
 
@@ -51,7 +59,6 @@ app.http('EntraPwdAuth', {
       const mongoClient = await getMongoClient()
       const collection = mongoClient.db(MONGODB.DB_NAME).collection(MONGODB.LOG_COLLECTION)
 
-      const logEntryId = state
       const logEntry = await collection.findOne({ _id: ObjectId.createFromHexString(logEntryId) })
       if (!logEntry) throw new Error('Could not find a corresponding logEntry for this state, restart the process from the client')
       logger('info', [logPrefix, 'Found corresponding logEntry with state/ObjectId - verifying user, and updating logEntry'])
